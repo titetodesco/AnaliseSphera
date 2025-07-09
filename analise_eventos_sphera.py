@@ -13,7 +13,6 @@ st.set_page_config(page_title="Análise de Eventos Offshore", layout="wide")
 @st.cache_data(ttl=3600)
 def load_data_from_github():
     url = "https://raw.githubusercontent.com/titetodesco/sphera/main/TRATADO_safeguardOffShore.xlsx"
-)
     response = requests.get(url)
     if response.status_code != 200:
         st.error("Erro ao baixar o arquivo do GitHub!")
