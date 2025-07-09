@@ -42,6 +42,7 @@ analises = [
     "Heatmap Risk Area × Human Factor",
     "Tendência Temporal de Eventos",
     "Top Tasks por Risk Area",
+    "Tasks Mais Frequentes por Risk Area (Near Miss & Observation)"
 ]
 selected_analise = st.sidebar.radio("Escolha a análise:", analises)
 
@@ -147,9 +148,35 @@ elif selected_analise == "Top Tasks por Risk Area":
         fig = px.bar(top_tasks, x="Task / Activity", y="Qtd Eventos", title=f"Top 5 Tasks em '{risk}'", text="Qtd Eventos")
         fig.update_layout(xaxis_title="Task / Activity", yaxis_title="Qtd Eventos", showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
+        
+elif selected_analise == "Tasks Mais Frequentes por Risk Area (Near Miss & Observation)":
+    st.header("📝 Tasks Mais Frequentes por Risk Area (Near Miss & Observation)")
+
+    # 🎯 Filtro: Near Miss e Observation
+    filtro_df = df_filtered[df_filtered["Event Type"].str.lower().isin(["near miss", "observation"])].copy()
+
+    # 🔍 Remover duplicatas relevantes
+    df_unique = filtro_df.drop_duplicates(subset=["Event ID", "Risk Area", "Task / Activity"])
+
+    # 📦 Agrupar por Risk Area
+    risk_areas = sorted(df_unique["Risk Area"].dropna().unique())
+
+    for risk_area in risk_areas:
+        sub_df = df_unique[df_unique["Risk Area"] == risk_area]
+        task_counts = sub_df["Task / Activity"].value_counts().sort_values(ascending=False)
+        st.subheader(f"📌 Risk Area: {risk_area}")
+        st.dataframe(task_counts.reset_index().rename(columns={"index": "Task / Activity", "Task / Activity": "Frequência"}))
+
+        # 📊 Gráfico de colunas horizontal (usando matplotlib/seaborn)
+        fig, ax = plt.subplots(figsize=(8, min(0.5*len(task_counts), 8)))
+        sns.barplot(x=task_counts.values, y=task_counts.index, palette="Blues_r", ax=ax)
+        ax.set_title(f"Tarefas mais frequentes em: {risk_area}")
+        ax.set_xlabel("Frequência")
+        ax.set_ylabel("Task / Activity")
+        st.pyplot(fig)
+        
 
 else:
     st.info("Selecione uma análise no menu.")
 
 st.caption("App por @titetodesco & ChatGPT - Última atualização: 2024-07")
-
