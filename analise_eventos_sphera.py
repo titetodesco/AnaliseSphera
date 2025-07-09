@@ -37,6 +37,7 @@ df_filtered = df[df["Location"].isin(selected_locations)] if selected_locations 
 analises = [
     "Resumo dos Dados",
     "Heatmap Location × Risk Area",
+    "Heatmap Location × Task",  
     "Heatmap Location × Human Factor",
     "Heatmap Task × Human Factor",
     "Heatmap Risk Area × Human Factor",
@@ -70,6 +71,24 @@ elif selected_analise == "Heatmap Location × Risk Area":
     plt.figure(figsize=(12, min(8, 0.4*len(pivot))))
     sns.heatmap(pivot, annot=True, fmt="d", cmap="YlGnBu", linewidths=0.5)
     plt.title("Nº de Eventos distintos por Location e Risk Area")
+    st.pyplot(plt.gcf())
+    plt.clf()
+
+elif selected_analise == "Heatmap Location × Task":
+    st.header("📍 Heatmap Location × Task")
+    pivot = (
+        df_filtered.drop_duplicates(subset=["Event ID", "Location", "Task / Activity"])
+        .pivot_table(
+            index="Location",
+            columns="Task / Activity",
+            values="Event ID",
+            aggfunc="nunique",
+            fill_value=0
+        )
+    )
+    plt.figure(figsize=(12, min(8, 0.4*len(pivot))))
+    sns.heatmap(pivot, annot=True, fmt="d", cmap="YlGnBu", linewidths=0.5)
+    plt.title("Nº de Eventos distintos por Location e Task / Activity")
     st.pyplot(plt.gcf())
     plt.clf()
 
