@@ -216,4 +216,5 @@ elif selected_analise == "Tasks Mais Frequentes por Risk Area (Near Miss & Obser
 else:
     st.info("Selecione uma análise no menu.")
 
-st.caption("App por @titetodesco & ChatGPT - Última atualização: 2024-07")
+st.caption("App por @titetodesco & ChatGPT - Última atualização: 2025-07")
+
