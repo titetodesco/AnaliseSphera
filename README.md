@@ -1,5 +1,5 @@
 # Análise Sphera
-https://sphera-novo.streamlit.app/
+https://sphera-painel.streamlit.app/
 
 Aplicação Streamlit para análise da base de eventos offshore Sphera com a nova planilha `data/Sphera.xlsx`.
 
