@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 import warnings
 from io import BytesIO
@@ -219,15 +220,33 @@ TEXT_FEATURES = [
 
 PAGE_OPTIONS = [
     "1. Visão Executiva da Ontologia",
-    "2. FPI/SIF e Severidade Potencial",
+    "Dados filtrados",
     "3. Sinais Fracos, Precursores e Incidentes",
-    "4. Barreiras Críticas e Estado das Barreiras",
     "5. Cenários, Mecanismos e Pareto 80/20",
+    "4. Barreiras Críticas e Estado das Barreiras",
+    "2. FPI/SIF e Severidade Potencial",
     "6. Curadoria e Qualidade da Classificação",
     "7. Qualidade dos Dados",
     "Modelos preditivos",
-    "Dados filtrados",
+    "NLP / SafetyChat",
+    "Grafo de Relações",
+    "Administração / Dicionário",
 ]
+
+PAGE_LABELS = {
+    "1. Visão Executiva da Ontologia": "Visão Executiva",
+    "Dados filtrados": "Eventos e Exploração",
+    "3. Sinais Fracos, Precursores e Incidentes": "Sinais, Precursores e Incidentes",
+    "5. Cenários, Mecanismos e Pareto 80/20": "Cenários & Pareto",
+    "4. Barreiras Críticas e Estado das Barreiras": "Barreiras Críticas",
+    "2. FPI/SIF e Severidade Potencial": "FPI/SIF & Severidade",
+    "6. Curadoria e Qualidade da Classificação": "Curadoria",
+    "7. Qualidade dos Dados": "Qualidade dos Dados",
+    "Modelos preditivos": "Análises Preditivas",
+    "NLP / SafetyChat": "NLP / SafetyChat",
+    "Grafo de Relações": "Grafo de Relações",
+    "Administração / Dicionário": "Administração / Dicionário",
+}
 
 
 def get_configured_password() -> str:
@@ -437,6 +456,325 @@ def metric_cards(cards: list[tuple[str, str, str | None]], columns: int = 4) -> 
             cols[index].metric(label, value, delta=delta)
 
 
+def inject_cockpit_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+            --sphera-navy: #07345f;
+            --sphera-blue: #1155a3;
+            --sphera-green: #16803b;
+            --sphera-purple: #5b3aa4;
+            --sphera-orange: #c85b12;
+            --sphera-cyan: #087f8c;
+            --sphera-surface: #f6f8fb;
+            --sphera-line: #d9e2ef;
+        }
+        .block-container {
+            max-width: 1500px;
+            padding-top: 1.15rem;
+            padding-bottom: 2rem;
+        }
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #052957 0%, #07345f 54%, #0b6670 100%);
+        }
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] span {
+            color: #f8fbff;
+        }
+        [data-testid="stSidebar"] .stRadio label {
+            min-height: 2.45rem;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 8px;
+            padding: 0.28rem 0.55rem;
+            margin: 0.16rem 0;
+            background: rgba(255, 255, 255, 0.07);
+        }
+        [data-testid="stSidebar"] .stRadio label:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .nav-brand {
+            padding: 0.75rem 0.2rem 0.85rem 0.2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 0.75rem;
+        }
+        .nav-title {
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 1.35rem;
+            line-height: 1.15;
+        }
+        .nav-subtitle {
+            color: #d9ebff;
+            font-size: 0.84rem;
+            margin-top: 0.25rem;
+        }
+        .cockpit-title {
+            border-bottom: 1px solid var(--sphera-line);
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.7rem;
+        }
+        .cockpit-title h1 {
+            color: var(--sphera-navy);
+            font-size: 2rem;
+            margin: 0;
+            letter-spacing: 0;
+        }
+        .cockpit-title p {
+            color: #526179;
+            margin: 0.18rem 0 0 0;
+            font-size: 0.96rem;
+        }
+        .filter-shell {
+            border: 1px solid var(--sphera-line);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 0.85rem 0.9rem 0.2rem 0.9rem;
+            margin: 0.3rem 0 0.8rem 0;
+        }
+        .filter-title {
+            color: var(--sphera-navy);
+            font-size: 0.95rem;
+            font-weight: 800;
+            margin-bottom: 0.25rem;
+        }
+        .filter-summary {
+            border: 1px solid #dbe7d8;
+            border-left: 5px solid var(--sphera-green);
+            border-radius: 8px;
+            background: #f8fcf7;
+            color: #264032;
+            padding: 0.62rem 0.8rem;
+            margin: 0.25rem 0 1rem 0;
+            font-size: 0.92rem;
+        }
+        .layer-heading {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            border: 1px solid var(--sphera-line);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 0.75rem 0.9rem;
+            margin: 1.05rem 0 0.45rem 0;
+        }
+        .layer-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.6rem;
+            height: 2.6rem;
+            border-radius: 8px;
+            color: #ffffff;
+            font-weight: 900;
+            font-size: 1.35rem;
+            flex: 0 0 2.6rem;
+        }
+        .layer-heading h2 {
+            font-size: 1.14rem;
+            margin: 0;
+            color: var(--sphera-navy);
+            letter-spacing: 0;
+        }
+        .layer-heading p {
+            margin: 0.1rem 0 0 0;
+            color: #5a6880;
+            font-size: 0.88rem;
+        }
+        .accent-a { border-left: 5px solid var(--sphera-green); }
+        .accent-b { border-left: 5px solid var(--sphera-blue); }
+        .accent-c { border-left: 5px solid var(--sphera-purple); }
+        .accent-d { border-left: 5px solid var(--sphera-orange); }
+        .badge-a { background: var(--sphera-green); }
+        .badge-b { background: var(--sphera-blue); }
+        .badge-c { background: var(--sphera-purple); }
+        .badge-d { background: var(--sphera-orange); }
+        .static-card {
+            border: 1px solid var(--sphera-line);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 0.78rem 0.85rem;
+            min-height: 7.2rem;
+        }
+        .static-card h3 {
+            font-size: 0.94rem;
+            margin: 0;
+            color: var(--sphera-navy);
+            letter-spacing: 0;
+        }
+        .static-card .card-value {
+            font-size: 1.55rem;
+            font-weight: 850;
+            margin-top: 0.35rem;
+            color: #111827;
+        }
+        .static-card p {
+            color: #526179;
+            font-size: 0.84rem;
+            margin: 0.35rem 0 0 0;
+            line-height: 1.35;
+        }
+        .card-a { border-top: 4px solid var(--sphera-green); }
+        .card-b { border-top: 4px solid var(--sphera-blue); }
+        .card-c { border-top: 4px solid var(--sphera-purple); }
+        .card-d { border-top: 4px solid var(--sphera-orange); }
+        .journey {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 0.5rem;
+            margin: 0.75rem 0 1rem 0;
+        }
+        .journey-step {
+            border: 1px solid var(--sphera-line);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 0.72rem 0.75rem;
+            min-height: 4.8rem;
+        }
+        .journey-step strong {
+            display: block;
+            color: var(--sphera-navy);
+            font-size: 0.92rem;
+        }
+        .journey-step span {
+            display: block;
+            color: #5a6880;
+            font-size: 0.78rem;
+            margin-top: 0.2rem;
+            line-height: 1.25;
+        }
+        @media (max-width: 900px) {
+            .journey { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .cockpit-title h1 { font-size: 1.55rem; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def escape_html(value: object) -> str:
+    return html.escape(str(value))
+
+
+def render_static_card(title: str, value: str, body: str, accent: str) -> None:
+    value_html = f'<div class="card-value">{escape_html(value)}</div>' if value else ""
+    st.markdown(
+        f"""
+        <div class="static-card card-{escape_html(accent)}">
+            <h3>{escape_html(title)}</h3>
+            {value_html}
+            <p>{escape_html(body)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_layer_heading(letter: str, title: str, subtitle: str, accent: str) -> None:
+    st.markdown(
+        f"""
+        <div class="layer-heading accent-{escape_html(accent)}">
+            <div class="layer-badge badge-{escape_html(accent)}">{escape_html(letter)}</div>
+            <div>
+                <h2>{escape_html(title)}</h2>
+                <p>{escape_html(subtitle)}</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_question_strip() -> None:
+    questions = [
+        ("O que aconteceu?", "KPIs, tendência e alertas principais.", "a"),
+        ("Onde estão os maiores riscos?", "Distribuição por local, cenário e barreira.", "b"),
+        ("Por que aconteceu?", "Padrões, mecanismos e relações entre atributos.", "b"),
+        ("O que pode acontecer?", "Sinais preditivos, risco futuro e anomalias.", "c"),
+        ("O que deve ser priorizado?", "Ações recomendadas e curadoria crítica.", "d"),
+    ]
+    cols = st.columns(len(questions))
+    for col, (title, body, accent) in zip(cols, questions):
+        with col:
+            render_static_card(title, "", body, accent)
+
+
+def render_user_journey() -> None:
+    steps = [
+        ("Monitorar", "acompanhar KPIs e alertas"),
+        ("Explorar", "localizar padrões e concentrações"),
+        ("Investigar", "aprofundar causas, barreiras e evidências"),
+        ("Priorizar", "selecionar eventos e cenários críticos"),
+        ("Agir", "encaminhar curadoria e ações"),
+        ("Aprender", "melhorar regras, dados e decisões"),
+    ]
+    html_steps = "".join(
+        f"<div class='journey-step'><strong>{escape_html(title)}</strong><span>{escape_html(body)}</span></div>"
+        for title, body in steps
+    )
+    st.markdown(f"<div class='journey'>{html_steps}</div>", unsafe_allow_html=True)
+
+
+def cockpit_risk_score(
+    total: int,
+    fpi_yes: int,
+    fpi_possible: int,
+    high_curation: int,
+    incidents: int,
+    degraded_pct: float,
+) -> tuple[int, str]:
+    if not total:
+        return 0, "Sem dados"
+    score = int(
+        round(
+            100
+            * (
+                0.30 * (fpi_yes / total)
+                + 0.18 * (fpi_possible / total)
+                + 0.20 * (high_curation / total)
+                + 0.17 * (incidents / total)
+                + 0.15 * degraded_pct
+            )
+        )
+    )
+    if score >= 40:
+        return min(score, 100), "Alto"
+    if score >= 20:
+        return score, "Moderado"
+    return score, "Baixo"
+
+
+def render_action_grid(base: pd.DataFrame) -> None:
+    high_curation = int(equals_any(base, CURATION_PRIORITY_COL, ["Alta"]).sum())
+    fpi_priority = int((equals_any(base, FPI_COL, ["Sim"]) | contains_any(base, FPI_COL, ["possível"])).sum())
+    degraded = int(
+        contains_any(
+            base,
+            BARRIER_STATE_COL,
+            ["degradada", "falhou", "bypassada", "vencida", "potencialmente degradada"],
+        ).sum()
+    )
+    evidence_gap = int(missing_like(base[EVIDENCE_COL]).sum()) if has_column(base, EVIDENCE_COL) else 0
+    if has_column(base, DIRECT_EVIDENCE_COL):
+        evidence_gap = max(evidence_gap, int(contains_any(base, DIRECT_EVIDENCE_COL, ["não", "nao"]).sum()))
+
+    actions = [
+        ("Revisar curadoria alta", fmt_int(high_curation), "Prioridade alta para validação humana.", "d"),
+        ("Priorizar FPI/SIF", fmt_int(fpi_priority), "Eventos com potencial confirmado ou possível.", "d"),
+        ("Avaliar barreiras degradadas", fmt_int(degraded), "Controles críticos com estado frágil ou falha.", "c"),
+        ("Melhorar evidências", fmt_int(evidence_gap), "Registros com lacuna textual ou evidência insuficiente.", "b"),
+    ]
+    cols = st.columns(len(actions))
+    for col, (title, value, body, accent) in zip(cols, actions):
+        with col:
+            render_static_card(title, value, body, accent)
+
+
 def bar_chart(
     data: pd.DataFrame,
     category_col: str,
@@ -597,49 +935,91 @@ def pareto_chart(data: pd.DataFrame, category_col: str, title: str, top: int = 1
 def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     filtered = df.copy()
 
-    with st.sidebar.expander("Filtros", expanded=True):
-        if has_column(filtered, DATE_COL):
-            valid_dates = filtered[DATE_COL].dropna()
-            if not valid_dates.empty:
-                min_date = valid_dates.min().date()
-                max_date = valid_dates.max().date()
-                selected_period = st.date_input(
-                    "Período",
-                    value=(min_date, max_date),
-                    min_value=min_date,
-                    max_value=max_date,
-                )
-                if isinstance(selected_period, tuple) and len(selected_period) == 2:
-                    start_date, end_date = selected_period
-                    filtered = filtered[
-                        (filtered[DATE_COL].dt.date >= start_date)
-                        & (filtered[DATE_COL].dt.date <= end_date)
-                    ]
+    st.markdown(
+        """
+        <div class="filter-shell">
+            <div class="filter-title">Filtros globais</div>
+            <div style="color:#5a6880;font-size:0.84rem;">Sem seleção nos filtros equivale a todos os valores.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        for label, column in [
-            ("Localidade", LOCATION_COL),
-            ("Tipo de evento", EVENT_TYPE_COL),
-            ("Tipo ontológico", ONTOLOGY_COL),
-            ("Potencial FPI/SIF", FPI_COL),
-            ("Área de risco", RISK_AREA_COL),
-            ("Cenário acidental", SCENARIO_COL),
-        ]:
-            if not has_column(filtered, column):
-                continue
-            options = sorted(display_series(df[column]).dropna().unique(), key=lambda value: str(value).lower())
-            selected = st.multiselect(label, options, default=[])
-            if selected:
-                filtered = filtered[display_series(filtered[column]).isin(selected)]
+    first_row = st.columns([1.15, 1, 1, 1])
+    if has_column(filtered, DATE_COL):
+        valid_dates = filtered[DATE_COL].dropna()
+        if not valid_dates.empty:
+            min_date = valid_dates.min().date()
+            max_date = valid_dates.max().date()
+            selected_period = first_row[0].date_input(
+                "Período",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date,
+                key="filter_period",
+            )
+            if isinstance(selected_period, (tuple, list)) and len(selected_period) == 2:
+                start_date, end_date = selected_period
+                filtered = filtered[
+                    (filtered[DATE_COL].dt.date >= start_date)
+                    & (filtered[DATE_COL].dt.date <= end_date)
+                ]
 
-        search_text = st.text_input("Busca textual")
-        if search_text:
-            mask = pd.Series(False, index=filtered.index)
-            for column in [TITLE_COL, DESCRIPTION_COL, OBSERVED_EVENT_COL, EVIDENCE_COL]:
-                if has_column(filtered, column):
-                    mask = mask | clean_series(filtered[column]).str.contains(search_text, case=False, na=False)
-            filtered = filtered[mask]
+    for container, label, column, key in [
+        (first_row[1], "Localização", LOCATION_COL, "filter_location"),
+        (first_row[2], "Área de risco", RISK_AREA_COL, "filter_risk_area"),
+        (first_row[3], "Cenário acidental", SCENARIO_COL, "filter_scenario"),
+    ]:
+        if not has_column(df, column):
+            continue
+        options = sorted(display_series(df[column]).dropna().unique(), key=lambda value: str(value).lower())
+        selected = container.multiselect(label, options, default=[], key=key)
+        if selected:
+            filtered = filtered[display_series(filtered[column]).isin(selected)]
+
+    second_row = st.columns([1, 1, 1, 1.15])
+    for container, label, column, key in [
+        (second_row[0], "Barreira crítica", BARRIER_COL, "filter_barrier"),
+        (second_row[1], "Potencial FPI/SIF", FPI_COL, "filter_fpi"),
+        (second_row[2], "Tipo ontológico", ONTOLOGY_COL, "filter_ontology"),
+    ]:
+        if not has_column(df, column):
+            continue
+        options = sorted(display_series(df[column]).dropna().unique(), key=lambda value: str(value).lower())
+        selected = container.multiselect(label, options, default=[], key=key)
+        if selected:
+            filtered = filtered[display_series(filtered[column]).isin(selected)]
+
+    search_text = second_row[3].text_input("Busca textual", key="filter_text")
+    if search_text:
+        mask = pd.Series(False, index=filtered.index)
+        for column in [TITLE_COL, DESCRIPTION_COL, OBSERVED_EVENT_COL, EVIDENCE_COL]:
+            if has_column(filtered, column):
+                mask = mask | clean_series(filtered[column]).str.contains(search_text, case=False, na=False)
+        filtered = filtered[mask]
 
     return filtered
+
+
+def render_sidebar_navigation() -> str:
+    st.sidebar.markdown(
+        """
+        <div class="nav-brand">
+            <div class="nav-title">Cockpit Sphera</div>
+            <div class="nav-subtitle">Sistema Analítico da Ontologia_Eventos</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.sidebar.header("Menu principal")
+    page = st.sidebar.radio(
+        "Menu principal",
+        PAGE_OPTIONS,
+        index=0,
+        format_func=lambda option: PAGE_LABELS.get(option, option),
+        label_visibility="collapsed",
+    )
+    return page
 
 
 def render_sidebar_source() -> bytes | None:
@@ -673,12 +1053,36 @@ def page_header(df: pd.DataFrame) -> None:
         period = f"{min_date:%d/%m/%Y} a {max_date:%d/%m/%Y}"
     else:
         period = "Sem data válida"
-    st.title("Análise de Eventos Sphera")
-    st.caption(f"Base filtrada: {fmt_int(total_events)} eventos | Período: {period}")
+    st.markdown(
+        f"""
+        <div class="cockpit-title">
+            <h1>Sistema Analítico da Ontologia_Eventos</h1>
+            <p>Base carregada: <strong>{escape_html(fmt_int(total_events))}</strong> eventos | Período: {escape_html(period)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_filter_summary(df: pd.DataFrame) -> None:
+    total_events = distinct_events(df)[EVENT_ID_COL].nunique() if has_column(df, EVENT_ID_COL) else len(df)
+    if has_column(df, DATE_COL) and df[DATE_COL].notna().any():
+        min_date = df[DATE_COL].min().date()
+        max_date = df[DATE_COL].max().date()
+        period = f"{min_date:%d/%m/%Y} a {max_date:%d/%m/%Y}"
+    else:
+        period = "Sem data válida"
+    st.markdown(
+        f"""
+        <div class="filter-summary">
+            Seleção atual: <strong>{escape_html(fmt_int(total_events))}</strong> eventos | Período filtrado: {escape_html(period)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def dashboard_executive(df: pd.DataFrame) -> None:
-    st.header("1. Visão Executiva da Ontologia")
     base = distinct_events(df)
     total = len(base)
     weak = int(contains_any(base, ONTOLOGY_COL, ["sinal fraco"]).sum())
@@ -692,7 +1096,17 @@ def dashboard_executive(df: pd.DataFrame) -> None:
         BARRIER_STATE_COL,
         ["degradada", "falhou", "bypassada", "vencida", "potencialmente degradada"],
     ).mean()
+    risk_score, risk_level = cockpit_risk_score(total, fpi_yes, fpi_possible, high_curation, incidents, degraded_pct)
 
+    st.subheader("Visão Executiva")
+    render_question_strip()
+
+    render_layer_heading(
+        "A",
+        "Monitoramento",
+        "Indicadores-chave para acompanhar a base, sinais críticos e alertas iniciais.",
+        "a",
+    )
     metric_cards(
         [
             ("Eventos analisados", fmt_int(total), None),
@@ -706,13 +1120,19 @@ def dashboard_executive(df: pd.DataFrame) -> None:
         ]
     )
 
-    col1, col2 = st.columns([1.1, 0.9])
+    render_layer_heading(
+        "B",
+        "Compreensão",
+        "Distribuições, padrões e relações que explicam onde os riscos se concentram.",
+        "b",
+    )
+    col1, col2, col3 = st.columns([1.1, 0.9, 1.1])
     with col1:
         bar_chart(value_counts_df(base, ONTOLOGY_COL), ONTOLOGY_COL, "Distribuição por tipo ontológico", color="#2A6F97")
     with col2:
         donut_chart(value_counts_df(base, FPI_COL), FPI_COL, "Potencial FPI/SIF - Pessoas")
-
-    line_by_month(base, ONTOLOGY_COL, "Evolução mensal por tipo ontológico")
+    with col3:
+        line_by_month(base, ONTOLOGY_COL, "Evolução mensal por tipo ontológico")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -721,6 +1141,56 @@ def dashboard_executive(df: pd.DataFrame) -> None:
         bar_chart(value_counts_df(base, BARRIER_COL, top=10), BARRIER_COL, "Top barreiras críticas", color="#B08968")
     with col3:
         bar_chart(value_counts_df(base, LOCATION_COL, top=10), LOCATION_COL, "Eventos por localidade", color="#6D597A")
+
+    render_layer_heading(
+        "C",
+        "Inteligência avançada",
+        "Sinais de priorização para antecipar riscos, anomalias e eventos que pedem investigação.",
+        "c",
+    )
+    fpi_attention = fpi_yes + fpi_possible
+    evidence_gap = int(missing_like(base[EVIDENCE_COL]).sum()) if has_column(base, EVIDENCE_COL) else 0
+    degraded_count = int(
+        contains_any(
+            base,
+            BARRIER_STATE_COL,
+            ["degradada", "falhou", "bypassada", "vencida", "potencialmente degradada"],
+        ).sum()
+    )
+    intelligence_cols = st.columns(4)
+    with intelligence_cols[0]:
+        render_static_card("Score de risco futuro", f"{risk_score}", f"Nível {risk_level}; proxy calculado com FPI/SIF, incidentes, curadoria e barreiras.", "c")
+    with intelligence_cols[1]:
+        render_static_card("Atenção FPI/SIF", fmt_pct(fpi_attention / total) if total else "0,0%", "Eventos com potencial confirmado ou possível.", "d")
+    with intelligence_cols[2]:
+        render_static_card("Lacunas de evidência", fmt_int(evidence_gap), "Registros que merecem reforço textual ou validação documental.", "b")
+    with intelligence_cols[3]:
+        render_static_card("Barreiras degradadas", fmt_int(degraded_count), "Sinais de fragilidade em controles críticos.", "a")
+
+    priority_mask = (
+        equals_any(base, CURATION_PRIORITY_COL, ["Alta"])
+        | equals_any(base, FPI_COL, ["Sim"])
+        | contains_any(base, FPI_COL, ["possível"])
+        | contains_any(base, BARRIER_STATE_COL, ["degradada", "falhou", "bypassada", "vencida"])
+    )
+    priority_columns = [
+        column
+        for column in [EVENT_ID_COL, TITLE_COL, ONTOLOGY_COL, FPI_COL, SCENARIO_COL, BARRIER_COL, CURATION_PRIORITY_COL]
+        if has_column(base, column)
+    ]
+    if priority_columns and priority_mask.any():
+        st.dataframe(base.loc[priority_mask, priority_columns].head(15), use_container_width=True, hide_index=True)
+    else:
+        st.info("Sem eventos prioritários para os filtros atuais.")
+
+    render_layer_heading(
+        "D",
+        "Ação e decisão",
+        "Recomendações operacionais para transformar insights em curadoria, investigação e melhoria.",
+        "d",
+    )
+    render_action_grid(base)
+    render_user_journey()
 
 
 def dashboard_fpi(df: pd.DataFrame) -> None:
@@ -1581,9 +2051,38 @@ def dashboard_models(df: pd.DataFrame) -> None:
 
 
 def dashboard_filtered_data(df: pd.DataFrame) -> None:
-    st.header("Dados filtrados")
+    st.header("Eventos e Exploração")
     base = distinct_events(df)
     st.dataframe(base, use_container_width=True, hide_index=True)
+
+
+def dashboard_module_placeholder(title: str, layer: str, purpose: str) -> None:
+    accent = {"B": "b", "C": "c", "D": "d"}.get(layer, "b")
+    render_layer_heading(layer, title, purpose, accent)
+    cols = st.columns(3)
+    with cols[0]:
+        render_static_card("Estado", "Em evolução", "Estrutura reservada no cockpit para desenvolvimento incremental.", accent)
+    with cols[1]:
+        render_static_card("Base analítica", "Ontologia_Eventos", "O módulo será conectado aos eventos filtrados e metadados da planilha.", "b")
+    with cols[2]:
+        render_static_card("Integração", "Planejada", "A navegação já está pronta para receber a próxima implementação.", "d")
+
+
+def dashboard_dictionary(variables: pd.DataFrame) -> None:
+    st.header("Administração / Dicionário")
+    if variables.empty:
+        st.info("A aba Variaveis_Utilidade não foi encontrada ou está vazia.")
+        return
+
+    search = st.text_input("Buscar atributo no dicionário", key="dictionary_search")
+    dictionary = variables.copy()
+    if search:
+        mask = pd.Series(False, index=dictionary.index)
+        for column in dictionary.columns:
+            mask = mask | clean_series(dictionary[column]).str.contains(search, case=False, na=False)
+        dictionary = dictionary[mask]
+
+    st.dataframe(dictionary, use_container_width=True, hide_index=True)
 
 
 def render_page(page: str, df: pd.DataFrame, variables: pd.DataFrame) -> None:
@@ -1605,12 +2104,29 @@ def render_page(page: str, df: pd.DataFrame, variables: pd.DataFrame) -> None:
         dashboard_models(df)
     elif page == "Dados filtrados":
         dashboard_filtered_data(df)
+    elif page == "NLP / SafetyChat":
+        dashboard_module_placeholder(
+            "NLP / SafetyChat",
+            "C",
+            "Camada de inteligência para perguntas em linguagem natural, resumo textual e apoio investigativo.",
+        )
+    elif page == "Grafo de Relações":
+        dashboard_module_placeholder(
+            "Grafo de Relações",
+            "C",
+            "Camada de inteligência para revelar conexões entre eventos, cenários, barreiras, locais e mecanismos.",
+        )
+    elif page == "Administração / Dicionário":
+        dashboard_dictionary(variables)
 
 
 def main() -> None:
+    inject_cockpit_styles()
     if not check_password():
         st.stop()
 
+    page = render_sidebar_navigation()
+    st.sidebar.divider()
     uploaded_content = render_sidebar_source()
     try:
         workbook = load_data(uploaded_content)
@@ -1620,13 +2136,10 @@ def main() -> None:
 
     events = workbook["events"]
     variables = workbook["variables"]
+    page_header(events)
     filtered = filter_dataframe(events)
+    render_filter_summary(filtered)
 
-    page = st.sidebar.radio("Dashboard", PAGE_OPTIONS, index=0)
-    st.sidebar.divider()
-    st.sidebar.caption("Sem seleção nos filtros equivale a todos os valores.")
-
-    page_header(filtered)
     if filtered.empty:
         st.warning("Nenhum evento encontrado para os filtros selecionados.")
         st.stop()
