@@ -110,6 +110,73 @@ MODEL_TARGETS = {
     "8. Prever Escopo de Risco": SCOPE_COL,
 }
 
+MODEL_EXPLANATIONS = {
+    "1. Prever Potencial FPI/SIF": {
+        "aba": "1. FPI/SIF",
+        "objetivo": "Estimar se um evento tem potencial de fatalidade ou lesão séria/permanente em pessoas.",
+        "pergunta": "Quais eventos aparentemente simples podem esconder potencial de consequência grave para pessoas?",
+        "alvo": FPI_COL,
+        "uso": "Priorização preventiva, triagem de eventos com maior potencial de severidade e apoio à curadoria de segurança.",
+        "cuidado": "O resultado deve ser usado como sinal de priorização. Variáveis de severidade e ontologia podem representar avaliação posterior e devem ser usadas com cautela em produção.",
+    },
+    "2. Classificar Tipo Ontológico": {
+        "aba": "2. Tipo ontológico",
+        "objetivo": "Classificar automaticamente o evento como sinal fraco, precursor, incidente, capacidade resiliente ou classe equivalente.",
+        "pergunta": "Este novo evento parece apenas um sinal fraco, um precursor operacional/sistêmico ou um incidente realizado?",
+        "alvo": ONTOLOGY_COL,
+        "uso": "Organização da base por maturidade do sinal de risco e apoio à leitura da cadeia sinal fraco -> precursor -> incidente.",
+        "cuidado": "Não use variáveis ontológicas como preditoras quando o objetivo for simular classificação antes da curadoria, pois elas podem vazar a resposta.",
+    },
+    "3. Prever Cenário Acidental": {
+        "aba": "3. Cenário",
+        "objetivo": "Classificar o cenário acidental mais provável associado ao evento.",
+        "pergunta": "Se a condição observada evoluir, qual tipo de acidente ela pode representar?",
+        "alvo": SCENARIO_COL,
+        "uso": "Pareto de riscos, roteamento para especialistas e identificação de famílias de cenários dominantes.",
+        "cuidado": "Cenários raros podem ter pouco suporte estatístico. O filtro de mínimo de registros por classe evita métricas artificiais em classes muito pequenas.",
+    },
+    "4. Prever Barreira Crítica": {
+        "aba": "4. Barreira",
+        "objetivo": "Identificar qual barreira crítica está envolvida, degradada, ausente, demandada ou deveria ser avaliada.",
+        "pergunta": "Qual barreira provavelmente precisa ser verificada ou reforçada?",
+        "alvo": BARRIER_COL,
+        "uso": "Direcionamento de ações preventivas, revisão de controles críticos e priorização de inspeções ou auditorias.",
+        "cuidado": "A barreira crítica pode ter sido inferida pela própria ontologia; use o modo exploratório para investigação e o modo conservador para avaliação mais realista.",
+    },
+    "5. Prever Incidente Futuro": {
+        "aba": "5. Incidente",
+        "objetivo": "Classificar o tipo administrativo do evento usando `Event Type` como proxy para evolução para incidentes, near misses ou observações.",
+        "pergunta": "Quais sinais fracos ou precursores podem ter perfil semelhante ao de eventos classificados como incidentes?",
+        "alvo": EVENT_TYPE_COL,
+        "uso": "Triagem inicial de registros e identificação de perfis que se aproximam de incidentes registrados.",
+        "cuidado": "Este é um proxy, não uma previsão temporal real de futuro. Para previsão temporal, seria necessário construir uma variável-alvo baseada em janelas de tempo e recorrência.",
+    },
+    "6. Prever Potential Severity - Pessoas": {
+        "aba": "6. Severidade",
+        "objetivo": "Estimar a severidade potencial para pessoas conforme o campo de severidade do Sphera.",
+        "pergunta": "Qual nível de severidade potencial para pessoas é compatível com este evento?",
+        "alvo": POTENTIAL_SEVERITY_PEOPLE_COL,
+        "uso": "Apoio à consistência de classificação de severidade e identificação de eventos subavaliados.",
+        "cuidado": "A severidade pode refletir avaliação humana posterior ao registro; valide com separação temporal antes de usar operacionalmente.",
+    },
+    "7. Prever Tipo de Dano FPI/SIF": {
+        "aba": "7. Dano FPI/SIF",
+        "objetivo": "Classificar o tipo de dano potencial associado a fatalidade ou lesão séria/permanente.",
+        "pergunta": "Qual tipo de dano FPI/SIF é mais plausível caso o evento evolua?",
+        "alvo": FPI_DAMAGE_COL,
+        "uso": "Apoio à prevenção direcionada por tipo de dano e ao planejamento de barreiras específicas.",
+        "cuidado": "Classes de dano muito específicas podem precisar de mais dados ou agrupamento para melhorar robustez.",
+    },
+    "8. Prever Escopo de Risco": {
+        "aba": "8. Escopo",
+        "objetivo": "Indicar a dimensão principal afetada caso o evento evolua ou revele uma condição de risco relevante.",
+        "pergunta": "O principal domínio de consequência é pessoas, processo, ativo, ambiente, marítimo ou outro escopo?",
+        "alvo": SCOPE_COL,
+        "uso": "Roteamento por domínio de risco, priorização por especialidade e apoio à taxonomia do SafetyChat.",
+        "cuidado": "É o alvo com mais classes e maior dispersão; espere desempenho menor e avalie agrupamentos de escopo se necessário.",
+    },
+}
+
 BASIC_CATEGORICAL_FEATURES = [
     EVENT_TYPE_COL,
     LOCATION_COL,
@@ -1261,7 +1328,7 @@ def render_confusion_matrix(model_result: dict[str, object]) -> None:
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_prediction_simulator(model_result: dict[str, object]) -> None:
+def render_prediction_simulator(model_result: dict[str, object], key_prefix: str = "prediction_simulator") -> None:
     st.subheader("Predição para evento existente")
     metadata = model_result["metadata"].copy()
     if metadata.empty or not has_column(metadata, EVENT_ID_COL):
@@ -1276,7 +1343,7 @@ def render_prediction_simulator(model_result: dict[str, object]) -> None:
         axis=1,
     )
     event_options = metadata[EVENT_ID_COL].dropna().astype(str).unique().tolist()
-    selected_event_id = st.selectbox("Evento do conjunto de teste", event_options)
+    selected_event_id = st.selectbox("Evento do conjunto de teste", event_options, key=f"{key_prefix}_event")
     selected_index = metadata[metadata[EVENT_ID_COL].astype(str) == selected_event_id].index[0]
     sample_X = model_result["X_all"].loc[[selected_index]]
     predicted = model_result["pipeline"].predict(sample_X)[0]
@@ -1312,66 +1379,72 @@ def render_prediction_simulator(model_result: dict[str, object]) -> None:
         st.dataframe(metadata.loc[[selected_index], detail_cols], use_container_width=True, hide_index=True)
 
 
-def dashboard_models(df: pd.DataFrame) -> None:
-    st.header("Modelos preditivos")
+def model_state_key(model_name: str) -> str:
+    model_number = list(MODEL_TARGETS.keys()).index(model_name) + 1
+    return f"model_{model_number}"
+
+
+def model_overview_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for model, target in MODEL_TARGETS.items():
+        info = MODEL_EXPLANATIONS[model]
         readiness = model_readiness(df, target)
-        rows.append({"Modelo": model, **readiness})
-    readiness_df = pd.DataFrame(rows)
-
-    st.subheader("Viabilidade dos alvos")
-    display = readiness_df.copy()
-    display["Completude alvo"] = display["Completude alvo"].map(fmt_pct)
-    display["% maior classe"] = display["% maior classe"].map(fmt_pct)
-    st.dataframe(display, use_container_width=True, hide_index=True)
-
-    st.subheader("Treinar baseline")
-    col1, col2 = st.columns([1.3, 1])
-    with col1:
-        selected_model = st.selectbox("Modelo", list(MODEL_TARGETS.keys()))
-        feature_mode = st.radio(
-            "Conjunto de variáveis",
-            [
-                "Campos Sphera/texto inicial (menor vazamento)",
-                "Campos Sphera + ontologia (exploratório)",
-            ],
-            horizontal=False,
+        rows.append(
+            {
+                "Modelo": model,
+                "Variável-alvo": target,
+                "Objetivo": info["objetivo"],
+                "Pergunta respondida": info["pergunta"],
+                "Registros úteis": readiness["Registros úteis"],
+                "Completude alvo": fmt_pct(readiness["Completude alvo"]),
+                "Classes": readiness["Classes"],
+                "Maior classe": readiness["Maior classe"],
+                "% maior classe": fmt_pct(readiness["% maior classe"]),
+                "Status": readiness["Status"],
+            }
         )
-    with col2:
-        test_size = st.slider("Percentual para teste", 0.15, 0.35, 0.25, 0.05)
-        min_class_count = st.slider("Mínimo de registros por classe", 2, 50, 20, 1)
+    return pd.DataFrame(rows)
 
-    if "ontologia" in feature_mode.lower():
-        st.warning(
-            "Modo exploratório: algumas variáveis ontológicas podem carregar informação derivada do próprio alvo. "
-            "Use esse resultado para investigação, não como evidência final de desempenho em produção."
-        )
 
-    target = MODEL_TARGETS[selected_model]
-    model_signature = (selected_model, target, feature_mode, test_size, min_class_count, dataframe_signature(df))
-    should_train = st.button("Treinar / recalcular modelo", type="primary")
-    if should_train or st.session_state.get("model_signature") != model_signature:
-        with st.spinner("Treinando modelo baseline..."):
-            try:
-                st.session_state["model_result"] = train_predictive_model(
-                    df,
-                    target=target,
-                    feature_mode=feature_mode,
-                    test_size=test_size,
-                    min_class_count=min_class_count,
-                )
-                st.session_state["model_signature"] = model_signature
-            except Exception as exc:
-                st.error(f"Não foi possível treinar este modelo: {exc}")
-                st.session_state.pop("model_result", None)
-                st.session_state.pop("model_signature", None)
-                return
+def render_model_explanation(model_name: str) -> None:
+    info = MODEL_EXPLANATIONS[model_name]
+    st.markdown(
+        f"""
+**Objetivo:** {info["objetivo"]}
 
-    model_result = st.session_state.get("model_result")
-    if not model_result:
+**Pergunta que responde:** {info["pergunta"]}
+
+**Variável-alvo:** `{info["alvo"]}`
+
+**Uso esperado:** {info["uso"]}
+
+**Cuidados de interpretação:** {info["cuidado"]}
+"""
+    )
+
+
+def render_target_distribution(df: pd.DataFrame, target: str) -> None:
+    if not has_column(df, target):
         return
+    counts = value_counts_df(df, target, top=12)
+    if counts.empty:
+        return
+    chart_data = counts.sort_values("Quantidade", ascending=True).copy()
+    chart_data["Classe curta"] = chart_data[target].map(lambda value: shorten(value, 42))
+    fig = px.bar(
+        chart_data,
+        x="Quantidade",
+        y="Classe curta",
+        orientation="h",
+        text="Quantidade",
+        title="Distribuição das classes do alvo",
+        color_discrete_sequence=["#2A6F97"],
+    )
+    fig.update_layout(height=max(320, 90 + 32 * len(chart_data)), margin=dict(l=10, r=30, t=55, b=10), yaxis_title="")
+    st.plotly_chart(fig, use_container_width=True)
 
+
+def render_model_result_tabs(model_result: dict[str, object], key_prefix: str) -> None:
     st.subheader("Desempenho no conjunto de teste")
     render_model_metrics(model_result)
 
@@ -1409,7 +1482,102 @@ def dashboard_models(df: pd.DataFrame) -> None:
             st.info("Importância de variáveis indisponível para este pipeline.")
 
     with tab_simulator:
-        render_prediction_simulator(model_result)
+        render_prediction_simulator(model_result, key_prefix=key_prefix)
+
+
+def render_single_model_panel(
+    df: pd.DataFrame,
+    model_name: str,
+    feature_mode: str,
+    test_size: float,
+    min_class_count: int,
+) -> None:
+    target = MODEL_TARGETS[model_name]
+    state_key = model_state_key(model_name)
+    result_key = f"{state_key}_result"
+    signature_key = f"{state_key}_signature"
+    model_signature = (model_name, target, feature_mode, test_size, min_class_count, dataframe_signature(df))
+
+    render_model_explanation(model_name)
+    readiness = model_readiness(df, target)
+    metric_cards(
+        [
+            ("Registros úteis", fmt_int(readiness["Registros úteis"]), None),
+            ("Completude do alvo", fmt_pct(readiness["Completude alvo"]), None),
+            ("Classes", fmt_int(readiness["Classes"]), None),
+            ("Maior classe", fmt_pct(readiness["% maior classe"]), shorten(readiness["Maior classe"], 32)),
+        ]
+    )
+
+    col_distribution, col_action = st.columns([1.25, 0.75])
+    with col_distribution:
+        render_target_distribution(df, target)
+    with col_action:
+        st.subheader("Treino")
+        st.write(f"Status: {readiness['Status']}")
+        should_train = st.button("Treinar este modelo", type="primary", key=f"{state_key}_train")
+        if should_train:
+            with st.spinner("Treinando modelo baseline..."):
+                try:
+                    st.session_state[result_key] = train_predictive_model(
+                        df,
+                        target=target,
+                        feature_mode=feature_mode,
+                        test_size=test_size,
+                        min_class_count=min_class_count,
+                    )
+                    st.session_state[signature_key] = model_signature
+                except Exception as exc:
+                    st.error(f"Não foi possível treinar este modelo: {exc}")
+                    st.session_state.pop(result_key, None)
+                    st.session_state.pop(signature_key, None)
+
+    model_result = st.session_state.get(result_key)
+    if not model_result:
+        st.info("Modelo ainda não treinado nesta sessão.")
+        return
+    if st.session_state.get(signature_key) != model_signature:
+        st.warning("A configuração ou os filtros mudaram desde o último treino. Treine novamente para atualizar as métricas.")
+    render_model_result_tabs(model_result, key_prefix=state_key)
+
+
+def dashboard_models(df: pd.DataFrame) -> None:
+    st.header("Modelos preditivos")
+    st.subheader("Viabilidade dos alvos")
+    st.dataframe(model_overview_dataframe(df), use_container_width=True, hide_index=True)
+
+    st.subheader("Configuração comum dos treinos")
+    col1, col2 = st.columns([1.3, 1])
+    with col1:
+        feature_mode = st.radio(
+            "Conjunto de variáveis",
+            [
+                "Campos Sphera/texto inicial (menor vazamento)",
+                "Campos Sphera + ontologia (exploratório)",
+            ],
+            horizontal=False,
+            key="model_feature_mode",
+        )
+    with col2:
+        test_size = st.slider("Percentual para teste", 0.15, 0.35, 0.25, 0.05, key="model_test_size")
+        min_class_count = st.slider("Mínimo de registros por classe", 2, 50, 20, 1, key="model_min_class_count")
+
+    if "ontologia" in feature_mode.lower():
+        st.warning(
+            "Modo exploratório: algumas variáveis ontológicas podem carregar informação derivada do próprio alvo. "
+            "Use esse resultado para investigação, não como evidência final de desempenho em produção."
+        )
+
+    model_tabs = st.tabs([MODEL_EXPLANATIONS[model]["aba"] for model in MODEL_TARGETS])
+    for model_tab, model_name in zip(model_tabs, MODEL_TARGETS.keys()):
+        with model_tab:
+            render_single_model_panel(
+                df,
+                model_name=model_name,
+                feature_mode=feature_mode,
+                test_size=test_size,
+                min_class_count=min_class_count,
+            )
 
 
 def dashboard_filtered_data(df: pd.DataFrame) -> None:

@@ -52,7 +52,7 @@ A página de modelos permite treinar baselines de classificação para:
 - Tipo de Dano FPI/SIF
 - Escopo de Risco
 
-Cada modelo mostra métricas de teste, matriz de confusão, relatório por classe, variáveis influentes e simulação com eventos existentes.
+Cada modelo aparece em uma aba própria, com explicação do objetivo, pergunta respondida, variável-alvo, uso esperado e cuidados de interpretação. O treino é independente por modelo e mostra métricas de teste, matriz de confusão, relatório por classe, variáveis influentes e simulação com eventos existentes.
 
 Aplicação original publicada em:
 
