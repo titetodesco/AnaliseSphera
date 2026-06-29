@@ -1,4 +1,5 @@
-# Análise Sphera   https://sphera-novo.streamlit.app/ 
+# Análise Sphera
+https://sphera-novo.streamlit.app/
 
 Aplicação Streamlit para análise da base de eventos offshore Sphera com a nova planilha `data/Sphera.xlsx`.
 
@@ -36,7 +37,22 @@ Para alterar a senha no Streamlit Cloud, configure o segredo `APP_PASSWORD`.
 - Cenários, Mecanismos e Pareto 80/20
 - Curadoria e Qualidade da Classificação
 - Qualidade dos Dados
-- Modelos preditivos - preparação
+- Modelos preditivos
+
+## Modelos preditivos
+
+A página de modelos permite treinar baselines de classificação para:
+
+- Potencial FPI/SIF
+- Tipo Ontológico
+- Cenário Acidental
+- Barreira Crítica
+- Incidente Futuro
+- Potential Severity - Pessoas
+- Tipo de Dano FPI/SIF
+- Escopo de Risco
+
+Cada modelo mostra métricas de teste, matriz de confusão, relatório por classe, variáveis influentes e simulação com eventos existentes.
 
 Aplicação original publicada em:
 

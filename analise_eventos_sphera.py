@@ -1,14 +1,31 @@
 from __future__ import annotations
 
 import re
+import warnings
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from sklearn.compose import ColumnTransformer
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+)
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
 
 
 st.set_page_config(
@@ -39,7 +56,10 @@ BARRIER_STATE_COL = "Estado da barreira"
 ESCALATION_COL = "Mecanismo de escalada"
 TASK_COL = "Task / Activity (consolidado)"
 RISK_AREA_COL = "Risk Area (consolidado)"
+OBSERVATION_TYPE_COL = "Observation Type"
 HUMAN_FACTOR_COL = "Human Factors"
+CONSEQUENCES_COL = "Consequences"
+EVENT_CONSEQUENCES_COL = "Event Consequences"
 FPI_COL = "Potencial FPI/SIF - Pessoas"
 FPI_DAMAGE_COL = "Tipo de dano FPI/SIF potencial"
 CURATION_PRIORITY_COL = "Prioridade de curadoria"
@@ -57,6 +77,11 @@ DESCRIPTION_COL = "Description"
 OBSERVED_EVENT_COL = "Evento observado"
 EVIDENCE_COL = "Evidência"
 POTENTIAL_SEVERITY_PEOPLE_COL = "Potential Severity - People"
+POTENTIAL_SEVERITY_ASSET_COL = "Potential Severity - Asset"
+POTENTIAL_SEVERITY_COMMUNITY_COL = "Potential Severity - Community"
+POTENTIAL_SEVERITY_ENVIRONMENTAL_COL = "Potential Severity - Environmental"
+RELATED_DOCUMENTS_COL = "Related documents"
+SCORE_RULE_COL = "Score regra"
 
 CORE_COMPLETENESS_COLUMNS = [
     EVENT_ID_COL,
@@ -74,6 +99,57 @@ CORE_COMPLETENESS_COLUMNS = [
     RISK_AREA_COL,
 ]
 
+MODEL_TARGETS = {
+    "1. Prever Potencial FPI/SIF": FPI_COL,
+    "2. Classificar Tipo Ontológico": ONTOLOGY_COL,
+    "3. Prever Cenário Acidental": SCENARIO_COL,
+    "4. Prever Barreira Crítica": BARRIER_COL,
+    "5. Prever Incidente Futuro": EVENT_TYPE_COL,
+    "6. Prever Potential Severity - Pessoas": POTENTIAL_SEVERITY_PEOPLE_COL,
+    "7. Prever Tipo de Dano FPI/SIF": FPI_DAMAGE_COL,
+    "8. Prever Escopo de Risco": SCOPE_COL,
+}
+
+BASIC_CATEGORICAL_FEATURES = [
+    EVENT_TYPE_COL,
+    LOCATION_COL,
+    RAM_POTENTIAL_COL,
+    TASK_COL,
+    RISK_AREA_COL,
+    OBSERVATION_TYPE_COL,
+    HUMAN_FACTOR_COL,
+    CONSEQUENCES_COL,
+    EVENT_CONSEQUENCES_COL,
+    POTENTIAL_SEVERITY_PEOPLE_COL,
+    POTENTIAL_SEVERITY_ASSET_COL,
+    POTENTIAL_SEVERITY_COMMUNITY_COL,
+    POTENTIAL_SEVERITY_ENVIRONMENTAL_COL,
+]
+
+ONTOLOGY_CATEGORICAL_FEATURES = [
+    ONTOLOGY_COL,
+    SCENARIO_COL,
+    BARRIER_COL,
+    BARRIER_STATE_COL,
+    ESCALATION_COL,
+    FPI_COL,
+    FPI_DAMAGE_COL,
+    DOMAIN_COL,
+    SCOPE_COL,
+    QUALITY_DESCRIPTION_COL,
+]
+
+NUMERIC_FEATURES = [
+    YEAR_COL,
+    RELATED_DOCUMENTS_COL,
+]
+
+TEXT_FEATURES = [
+    TITLE_COL,
+    DESCRIPTION_COL,
+    OBSERVED_EVENT_COL,
+]
+
 PAGE_OPTIONS = [
     "1. Visão Executiva da Ontologia",
     "2. FPI/SIF e Severidade Potencial",
@@ -82,7 +158,7 @@ PAGE_OPTIONS = [
     "5. Cenários, Mecanismos e Pareto 80/20",
     "6. Curadoria e Qualidade da Classificação",
     "7. Qualidade dos Dados",
-    "Modelos preditivos - preparação",
+    "Modelos preditivos",
     "Dados filtrados",
 ]
 
@@ -179,6 +255,15 @@ def fmt_ratio(numerator: float, denominator: float) -> str:
     if not denominator:
         return "n/d"
     return f"{numerator / denominator:.1f}x".replace(".", ",")
+
+
+def dataframe_signature(df: pd.DataFrame) -> tuple[int, int]:
+    if has_column(df, EVENT_ID_COL):
+        values = df[EVENT_ID_COL].astype("string")
+    else:
+        values = pd.Series(df.index.astype("string"), index=df.index)
+    hash_sum = int(pd.util.hash_pandas_object(values, index=False).sum())
+    return len(df), hash_sum
 
 
 def shorten(value: object, limit: int = 58) -> str:
@@ -884,64 +969,447 @@ def model_readiness(df: pd.DataFrame, target: str) -> dict[str, object]:
     }
 
 
-def dashboard_models(df: pd.DataFrame) -> None:
-    st.header("Modelos preditivos - preparação")
-    models = [
-        ("Prever Potencial FPI/SIF", FPI_COL),
-        ("Classificar Tipo Ontológico", ONTOLOGY_COL),
-        ("Prever Cenário Acidental", SCENARIO_COL),
-        ("Prever Barreira Crítica", BARRIER_COL),
-        ("Prever Incidente Futuro", EVENT_TYPE_COL),
-        ("Prever Potential Severity - Pessoas", POTENTIAL_SEVERITY_PEOPLE_COL),
-        ("Prever Tipo de Dano FPI/SIF", FPI_DAMAGE_COL),
-        ("Prever Escopo de Risco", SCOPE_COL),
-    ]
+def combine_text_columns(frame: pd.DataFrame | pd.Series) -> pd.Series:
+    if isinstance(frame, pd.Series):
+        frame = frame.to_frame()
+    return frame.fillna("").astype(str).agg(" ".join, axis=1)
+
+
+def available_columns(df: pd.DataFrame, columns: list[str], exclude: str | None = None) -> list[str]:
+    return [column for column in columns if has_column(df, column) and column != exclude]
+
+
+def build_model_frame(
+    df: pd.DataFrame,
+    target: str,
+    feature_mode: str,
+    min_class_count: int,
+) -> dict[str, object]:
+    base = distinct_events(df).copy()
+    if not has_column(base, target):
+        raise ValueError(f"Coluna-alvo ausente: {target}")
+
+    valid_target = ~missing_like(base[target])
+    base = base[valid_target].copy()
+    y = display_series(base[target])
+    class_counts = y.value_counts()
+    kept_classes = class_counts[class_counts >= min_class_count].index
+    base = base[y.isin(kept_classes)].copy()
+    y = display_series(base[target])
+
+    if base.empty or y.nunique() < 2:
+        raise ValueError("O alvo selecionado não tem classes suficientes após o filtro de classes raras.")
+
+    base["Mes"] = base[DATE_COL].dt.month if has_column(base, DATE_COL) else pd.NA
+    base["Trimestre_num"] = base[DATE_COL].dt.quarter if has_column(base, DATE_COL) else pd.NA
+    base["Dia_semana"] = base[DATE_COL].dt.dayofweek if has_column(base, DATE_COL) else pd.NA
+
+    categorical_cols = available_columns(base, BASIC_CATEGORICAL_FEATURES, exclude=target)
+    if "ontologia" in feature_mode.lower():
+        categorical_cols += [
+            column
+            for column in available_columns(base, ONTOLOGY_CATEGORICAL_FEATURES, exclude=target)
+            if column not in categorical_cols
+        ]
+
+    numeric_candidates = NUMERIC_FEATURES + ["Mes", "Trimestre_num", "Dia_semana"]
+    numeric_cols = available_columns(base, numeric_candidates, exclude=target)
+    text_cols = available_columns(base, TEXT_FEATURES, exclude=target)
+    feature_cols = categorical_cols + numeric_cols + text_cols
+
+    if not feature_cols:
+        raise ValueError("Não há variáveis preditoras disponíveis para este alvo.")
+
+    X = base[feature_cols].copy()
+    for column in categorical_cols + text_cols:
+        X[column] = display_series(X[column])
+    for column in numeric_cols:
+        X[column] = pd.to_numeric(X[column], errors="coerce")
+
+    metadata_cols = [EVENT_ID_COL, DATE_COL, LOCATION_COL, TITLE_COL, target]
+    metadata_cols = [column for column in metadata_cols if has_column(base, column)]
+
+    return {
+        "base": base,
+        "X": X,
+        "y": y,
+        "categorical_cols": categorical_cols,
+        "numeric_cols": numeric_cols,
+        "text_cols": text_cols,
+        "metadata": base[metadata_cols].copy(),
+        "class_counts": y.value_counts(),
+    }
+
+
+def make_model_pipeline(categorical_cols: list[str], numeric_cols: list[str], text_cols: list[str]) -> Pipeline:
+    transformers = []
+    if numeric_cols:
+        transformers.append(
+            (
+                "num",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="median")),
+                    ]
+                ),
+                numeric_cols,
+            )
+        )
+
+    if categorical_cols:
+        transformers.append(
+            (
+                "cat",
+                Pipeline(
+                    steps=[
+                        ("imputer", SimpleImputer(strategy="constant", fill_value="Não informado")),
+                        (
+                            "onehot",
+                            OneHotEncoder(
+                                handle_unknown="infrequent_if_exist",
+                                min_frequency=5,
+                            ),
+                        ),
+                    ]
+                ),
+                categorical_cols,
+            )
+        )
+
+    if text_cols:
+        transformers.append(
+            (
+                "text",
+                Pipeline(
+                    steps=[
+                        ("combine", FunctionTransformer(combine_text_columns, validate=False)),
+                        (
+                            "tfidf",
+                            TfidfVectorizer(
+                                max_features=1800,
+                                min_df=2,
+                                ngram_range=(1, 2),
+                                strip_accents="unicode",
+                            ),
+                        ),
+                    ]
+                ),
+                text_cols,
+            )
+        )
+
+    preprocessor = ColumnTransformer(transformers=transformers, sparse_threshold=0.35)
+    classifier = LogisticRegression(
+        class_weight="balanced",
+        max_iter=1200,
+        n_jobs=-1,
+        random_state=42,
+    )
+    return Pipeline(steps=[("preprocess", preprocessor), ("classifier", classifier)])
+
+
+def train_predictive_model(
+    df: pd.DataFrame,
+    target: str,
+    feature_mode: str,
+    test_size: float,
+    min_class_count: int,
+) -> dict[str, object]:
+    prepared = build_model_frame(df, target, feature_mode, min_class_count)
+    X = prepared["X"]
+    y = prepared["y"]
+
+    stratify = y if y.value_counts().min() >= 2 else None
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        random_state=42,
+        stratify=stratify,
+    )
+
+    pipeline = make_model_pipeline(
+        prepared["categorical_cols"],
+        prepared["numeric_cols"],
+        prepared["text_cols"],
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        pipeline.fit(X_train, y_train)
+
+    y_pred = pipeline.predict(X_test)
+    labels = list(pipeline.named_steps["classifier"].classes_)
+    report = classification_report(y_test, y_pred, labels=labels, output_dict=True, zero_division=0)
+    majority_accuracy = float(y_test.value_counts(normalize=True).max())
+
+    prediction_proba = None
+    if hasattr(pipeline, "predict_proba"):
+        prediction_proba = pipeline.predict_proba(X_test)
+
+    metadata = prepared["metadata"].loc[X_test.index].copy()
+    metadata["Valor real"] = y_test
+    metadata["Predição"] = y_pred
+    metadata["Acertou?"] = np.where(y_test.to_numpy() == y_pred, "Sim", "Não")
+    if prediction_proba is not None:
+        metadata["Confiança predição"] = prediction_proba.max(axis=1)
+
+    return {
+        "pipeline": pipeline,
+        "target": target,
+        "feature_mode": feature_mode,
+        "X_all": X,
+        "y_all": y,
+        "X_test": X_test,
+        "y_test": y_test,
+        "y_pred": y_pred,
+        "labels": labels,
+        "report": report,
+        "confusion": confusion_matrix(y_test, y_pred, labels=labels),
+        "metadata": metadata,
+        "class_counts": prepared["class_counts"],
+        "features": {
+            "Numéricas": prepared["numeric_cols"],
+            "Categóricas": prepared["categorical_cols"],
+            "Texto": prepared["text_cols"],
+        },
+        "metrics": {
+            "accuracy": float(accuracy_score(y_test, y_pred)),
+            "balanced_accuracy": float(balanced_accuracy_score(y_test, y_pred)),
+            "macro_f1": float(f1_score(y_test, y_pred, average="macro", zero_division=0)),
+            "weighted_f1": float(f1_score(y_test, y_pred, average="weighted", zero_division=0)),
+            "majority_accuracy": majority_accuracy,
+            "train_rows": int(len(X_train)),
+            "test_rows": int(len(X_test)),
+            "classes": int(y.nunique()),
+        },
+    }
+
+
+def report_to_dataframe(report: dict[str, object]) -> pd.DataFrame:
     rows = []
-    for model, target in models:
+    for label, metrics in report.items():
+        if isinstance(metrics, dict):
+            rows.append(
+                {
+                    "Classe": label,
+                    "Precision": metrics.get("precision", 0),
+                    "Recall": metrics.get("recall", 0),
+                    "F1-score": metrics.get("f1-score", 0),
+                    "Support": int(metrics.get("support", 0)),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def clean_feature_name(name: str) -> str:
+    for prefix in ["num__", "cat__", "text__"]:
+        name = name.replace(prefix, "")
+    return name.replace("onehot__", "").replace("tfidf__", "")
+
+
+def top_model_features(model_result: dict[str, object], top_n: int = 25) -> pd.DataFrame:
+    pipeline = model_result["pipeline"]
+    classifier = pipeline.named_steps["classifier"]
+    preprocessor = pipeline.named_steps["preprocess"]
+    try:
+        names = preprocessor.get_feature_names_out()
+    except Exception:
+        return pd.DataFrame()
+
+    coef = classifier.coef_
+    importance = np.mean(np.abs(coef), axis=0) if coef.ndim == 2 else np.abs(coef)
+    feature_df = pd.DataFrame(
+        {
+            "Variável/termo": [clean_feature_name(str(name)) for name in names],
+            "Importância média": importance,
+        }
+    )
+    return feature_df.sort_values("Importância média", ascending=False).head(top_n)
+
+
+def render_model_metrics(model_result: dict[str, object]) -> None:
+    metrics = model_result["metrics"]
+    metric_cards(
+        [
+            ("Acurácia", fmt_pct(metrics["accuracy"]), None),
+            ("Acurácia balanceada", fmt_pct(metrics["balanced_accuracy"]), None),
+            ("F1 macro", fmt_pct(metrics["macro_f1"]), None),
+            ("F1 ponderado", fmt_pct(metrics["weighted_f1"]), None),
+            ("Baseline maior classe", fmt_pct(metrics["majority_accuracy"]), None),
+            ("Treino", fmt_int(metrics["train_rows"]), None),
+            ("Teste", fmt_int(metrics["test_rows"]), None),
+            ("Classes", fmt_int(metrics["classes"]), None),
+        ]
+    )
+
+
+def render_confusion_matrix(model_result: dict[str, object]) -> None:
+    labels = model_result["labels"]
+    confusion = pd.DataFrame(model_result["confusion"], index=labels, columns=labels)
+    display_confusion = confusion.copy()
+    display_confusion.index = [shorten(label, 38) for label in display_confusion.index]
+    display_confusion.columns = [shorten(label, 38) for label in display_confusion.columns]
+    fig = px.imshow(
+        display_confusion,
+        text_auto=True,
+        aspect="auto",
+        color_continuous_scale="YlGnBu",
+        title="Matriz de confusão - conjunto de teste",
+    )
+    fig.update_layout(height=max(430, min(820, 120 + 34 * len(labels))), margin=dict(l=10, r=10, t=55, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_prediction_simulator(model_result: dict[str, object]) -> None:
+    st.subheader("Predição para evento existente")
+    metadata = model_result["metadata"].copy()
+    if metadata.empty or not has_column(metadata, EVENT_ID_COL):
+        st.info("Não há eventos disponíveis para simulação.")
+        return
+
+    all_rows = pd.concat(
+        [
+            model_result["X_all"],
+            model_result["y_all"].rename(model_result["target"]),
+        ],
+        axis=1,
+    )
+    event_options = metadata[EVENT_ID_COL].dropna().astype(str).unique().tolist()
+    selected_event_id = st.selectbox("Evento do conjunto de teste", event_options)
+    selected_index = metadata[metadata[EVENT_ID_COL].astype(str) == selected_event_id].index[0]
+    sample_X = model_result["X_all"].loc[[selected_index]]
+    predicted = model_result["pipeline"].predict(sample_X)[0]
+    actual = all_rows.loc[selected_index, model_result["target"]]
+
+    cols = st.columns(3)
+    cols[0].metric("Evento", selected_event_id)
+    cols[1].metric("Real", shorten(actual, 42))
+    cols[2].metric("Predição", shorten(predicted, 42))
+
+    if hasattr(model_result["pipeline"], "predict_proba"):
+        proba = model_result["pipeline"].predict_proba(sample_X)[0]
+        classes = model_result["pipeline"].named_steps["classifier"].classes_
+        proba_df = (
+            pd.DataFrame({"Classe": classes, "Probabilidade": proba})
+            .sort_values("Probabilidade", ascending=False)
+            .head(8)
+        )
+        fig = px.bar(
+            proba_df.sort_values("Probabilidade", ascending=True),
+            x="Probabilidade",
+            y="Classe",
+            orientation="h",
+            text=proba_df.sort_values("Probabilidade", ascending=True)["Probabilidade"].map(fmt_pct),
+            title="Probabilidades estimadas",
+            color_discrete_sequence=["#2A6F97"],
+        )
+        fig.update_layout(height=max(320, 70 + 34 * len(proba_df)), xaxis_tickformat=".0%", yaxis_title="")
+        st.plotly_chart(fig, use_container_width=True)
+
+    detail_cols = [column for column in [DATE_COL, LOCATION_COL, TITLE_COL] if has_column(metadata, column)]
+    if detail_cols:
+        st.dataframe(metadata.loc[[selected_index], detail_cols], use_container_width=True, hide_index=True)
+
+
+def dashboard_models(df: pd.DataFrame) -> None:
+    st.header("Modelos preditivos")
+    rows = []
+    for model, target in MODEL_TARGETS.items():
         readiness = model_readiness(df, target)
         rows.append({"Modelo": model, **readiness})
     readiness_df = pd.DataFrame(rows)
 
+    st.subheader("Viabilidade dos alvos")
     display = readiness_df.copy()
     display["Completude alvo"] = display["Completude alvo"].map(fmt_pct)
     display["% maior classe"] = display["% maior classe"].map(fmt_pct)
     st.dataframe(display, use_container_width=True, hide_index=True)
 
-    st.subheader("Variáveis candidatas a preditoras tabulares")
-    candidate_cols = [
-        DATE_COL,
-        YEAR_COL,
-        EVENT_TYPE_COL,
-        LOCATION_COL,
-        RAM_POTENTIAL_COL,
-        TASK_COL,
-        RISK_AREA_COL,
-        HUMAN_FACTOR_COL,
-        SCENARIO_COL,
-        BARRIER_COL,
-        BARRIER_STATE_COL,
-        ESCALATION_COL,
-        DOMAIN_COL,
-        QUALITY_DESCRIPTION_COL,
-    ]
-    candidate_cols = [column for column in candidate_cols if has_column(df, column)]
-    st.dataframe(completeness_table(distinct_events(df), candidate_cols), use_container_width=True, hide_index=True)
-
-    st.subheader("Campos textuais para modelos NLP")
-    text_cols = [column for column in [TITLE_COL, DESCRIPTION_COL, OBSERVED_EVENT_COL, EVIDENCE_COL] if has_column(df, column)]
-    text_summary = []
-    base = distinct_events(df)
-    for column in text_cols:
-        lengths = clean_series(base[column]).fillna("").str.len()
-        text_summary.append(
-            {
-                "Campo": column,
-                "Completude": fmt_pct((lengths > 0).mean()),
-                "Tamanho médio": round(float(lengths.mean()), 1),
-                "Tamanho mediano": round(float(lengths.median()), 1),
-            }
+    st.subheader("Treinar baseline")
+    col1, col2 = st.columns([1.3, 1])
+    with col1:
+        selected_model = st.selectbox("Modelo", list(MODEL_TARGETS.keys()))
+        feature_mode = st.radio(
+            "Conjunto de variáveis",
+            [
+                "Campos Sphera/texto inicial (menor vazamento)",
+                "Campos Sphera + ontologia (exploratório)",
+            ],
+            horizontal=False,
         )
-    st.dataframe(pd.DataFrame(text_summary), use_container_width=True, hide_index=True)
+    with col2:
+        test_size = st.slider("Percentual para teste", 0.15, 0.35, 0.25, 0.05)
+        min_class_count = st.slider("Mínimo de registros por classe", 2, 50, 20, 1)
+
+    if "ontologia" in feature_mode.lower():
+        st.warning(
+            "Modo exploratório: algumas variáveis ontológicas podem carregar informação derivada do próprio alvo. "
+            "Use esse resultado para investigação, não como evidência final de desempenho em produção."
+        )
+
+    target = MODEL_TARGETS[selected_model]
+    model_signature = (selected_model, target, feature_mode, test_size, min_class_count, dataframe_signature(df))
+    should_train = st.button("Treinar / recalcular modelo", type="primary")
+    if should_train or st.session_state.get("model_signature") != model_signature:
+        with st.spinner("Treinando modelo baseline..."):
+            try:
+                st.session_state["model_result"] = train_predictive_model(
+                    df,
+                    target=target,
+                    feature_mode=feature_mode,
+                    test_size=test_size,
+                    min_class_count=min_class_count,
+                )
+                st.session_state["model_signature"] = model_signature
+            except Exception as exc:
+                st.error(f"Não foi possível treinar este modelo: {exc}")
+                st.session_state.pop("model_result", None)
+                st.session_state.pop("model_signature", None)
+                return
+
+    model_result = st.session_state.get("model_result")
+    if not model_result:
+        return
+
+    st.subheader("Desempenho no conjunto de teste")
+    render_model_metrics(model_result)
+
+    tab_metrics, tab_confusion, tab_errors, tab_features, tab_simulator = st.tabs(
+        ["Relatório", "Matriz de confusão", "Erros e acertos", "Variáveis", "Simulador"]
+    )
+    with tab_metrics:
+        report_df = report_to_dataframe(model_result["report"])
+        st.dataframe(report_df, use_container_width=True, hide_index=True)
+        st.caption("F1 macro trata todas as classes com o mesmo peso; F1 ponderado considera o tamanho de cada classe.")
+
+    with tab_confusion:
+        render_confusion_matrix(model_result)
+
+    with tab_errors:
+        metadata = model_result["metadata"].copy()
+        if "Confiança predição" in metadata.columns:
+            metadata["Confiança predição"] = metadata["Confiança predição"].map(fmt_pct)
+        ordered = metadata.sort_values("Acertou?")
+        st.dataframe(ordered.head(200), use_container_width=True, hide_index=True)
+
+    with tab_features:
+        feature_groups = pd.DataFrame(
+            [
+                {"Grupo": group, "Variáveis": ", ".join(columns) if columns else "Nenhuma"}
+                for group, columns in model_result["features"].items()
+            ]
+        )
+        st.dataframe(feature_groups, use_container_width=True, hide_index=True)
+        feature_importance = top_model_features(model_result)
+        if not feature_importance.empty:
+            st.subheader("Variáveis e termos mais influentes")
+            st.dataframe(feature_importance, use_container_width=True, hide_index=True)
+        else:
+            st.info("Importância de variáveis indisponível para este pipeline.")
+
+    with tab_simulator:
+        render_prediction_simulator(model_result)
 
 
 def dashboard_filtered_data(df: pd.DataFrame) -> None:
@@ -965,7 +1433,7 @@ def render_page(page: str, df: pd.DataFrame, variables: pd.DataFrame) -> None:
         dashboard_curation(df)
     elif page == "7. Qualidade dos Dados":
         dashboard_data_quality(df, variables)
-    elif page == "Modelos preditivos - preparação":
+    elif page == "Modelos preditivos":
         dashboard_models(df)
     elif page == "Dados filtrados":
         dashboard_filtered_data(df)
