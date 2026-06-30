@@ -612,7 +612,7 @@ def inject_cockpit_styles() -> None:
             margin-top: 0.35rem;
             color: #111827;
         }
-        .static-card p {
+        .static-card .card-body {
             color: #526179;
             font-size: 0.84rem;
             margin: 0.35rem 0 0 0;
@@ -664,13 +664,13 @@ def escape_html(value: object) -> str:
 def render_static_card(title: str, value: str, body: str, accent: str) -> None:
     value_html = f'<div class="card-value">{escape_html(value)}</div>' if value else ""
     st.markdown(
-        f"""
-        <div class="static-card card-{escape_html(accent)}">
-            <h3>{escape_html(title)}</h3>
-            {value_html}
-            <p>{escape_html(body)}</p>
-        </div>
-        """,
+        (
+            f'<div class="static-card card-{escape_html(accent)}">'
+            f"<h3>{escape_html(title)}</h3>"
+            f"{value_html}"
+            f'<div class="card-body">{escape_html(body)}</div>'
+            "</div>"
+        ),
         unsafe_allow_html=True,
     )
 
