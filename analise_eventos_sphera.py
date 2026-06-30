@@ -237,7 +237,7 @@ PAGE_LABELS = {
     "1. Visão Executiva da Ontologia": "Visão Executiva",
     "Dados filtrados": "Eventos e Exploração",
     "3. Sinais Fracos, Precursores e Incidentes": "Sinais, Precursores e Incidentes",
-    "5. Cenários, Mecanismos e Pareto 80/20": "Cenários & Pareto",
+    "5. Cenários, Mecanismos e Pareto 80/20": "Cenários & Barreiras",
     "4. Barreiras Críticas e Estado das Barreiras": "Barreiras Críticas",
     "2. FPI/SIF e Severidade Potencial": "FPI/SIF & Severidade",
     "6. Curadoria e Qualidade da Classificação": "Curadoria",
@@ -618,6 +618,62 @@ def inject_cockpit_styles() -> None:
             margin: 0.35rem 0 0 0;
             line-height: 1.35;
         }
+        .question-panel {
+            border: 1px solid #b8dcc3;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #f6fbf7;
+            margin-top: 0.15rem;
+        }
+        .question-panel-title {
+            background: linear-gradient(180deg, #16803b 0%, #0f6a31 100%);
+            color: #ffffff;
+            font-weight: 850;
+            font-size: 1rem;
+            line-height: 1.2;
+            padding: 0.85rem 0.9rem;
+            text-align: center;
+        }
+        .question-card {
+            display: grid;
+            grid-template-columns: 2rem minmax(0, 1fr);
+            gap: 0.65rem;
+            align-items: center;
+            background: #ffffff;
+            border-bottom: 1px solid #dbe7d8;
+            min-height: 4.65rem;
+            padding: 0.7rem 0.75rem;
+        }
+        .question-card:last-child {
+            border-bottom: 0;
+        }
+        .question-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 999px;
+            background: #16803b;
+            color: #ffffff;
+            font-size: 0.86rem;
+            font-weight: 900;
+            flex: 0 0 2rem;
+        }
+        .question-card strong {
+            display: block;
+            color: #11243f;
+            font-size: 0.94rem;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
+        }
+        .question-card span {
+            display: block;
+            color: #607089;
+            font-size: 0.76rem;
+            line-height: 1.25;
+            margin-top: 0.18rem;
+        }
         .card-a { border-top: 4px solid var(--sphera-green); }
         .card-b { border-top: 4px solid var(--sphera-blue); }
         .card-c { border-top: 4px solid var(--sphera-purple); }
@@ -690,18 +746,36 @@ def render_layer_heading(letter: str, title: str, subtitle: str, accent: str) ->
     )
 
 
-def render_question_strip() -> None:
+def render_question_panel() -> None:
     questions = [
-        ("O que aconteceu?", "KPIs, tendência e alertas principais.", "a"),
-        ("Onde estão os maiores riscos?", "Distribuição por local, cenário e barreira.", "b"),
-        ("Por que aconteceu?", "Padrões, mecanismos e relações entre atributos.", "b"),
-        ("O que pode acontecer?", "Sinais preditivos, risco futuro e anomalias.", "c"),
-        ("O que deve ser priorizado?", "Ações recomendadas e curadoria crítica.", "d"),
+        ("A", "O que aconteceu?", "KPIs, dashboards e alertas."),
+        ("B", "Onde estão os maiores riscos?", "Locais, cenários e barreiras."),
+        ("B", "Por que aconteceu?", "Padrões, mecanismos e relações."),
+        ("C", "O que pode acontecer?", "Predição, risco futuro e anomalias."),
+        ("D", "O que deve ser priorizado?", "Riscos, eventos e curadoria crítica."),
+        ("D", "O que devemos fazer?", "Planos de ação e aprendizagem."),
     ]
-    cols = st.columns(len(questions))
-    for col, (title, body, accent) in zip(cols, questions):
-        with col:
-            render_static_card(title, "", body, accent)
+    cards_html = "".join(
+        (
+            '<div class="question-card">'
+            f'<div class="question-badge">{escape_html(layer)}</div>'
+            "<div>"
+            f"<strong>{escape_html(title)}</strong>"
+            f"<span>Camada {escape_html(layer)} - {escape_html(body)}</span>"
+            "</div>"
+            "</div>"
+        )
+        for layer, title, body in questions
+    )
+    st.markdown(
+        (
+            '<div class="question-panel">'
+            '<div class="question-panel-title">Perguntas que o sistema responde</div>'
+            f"{cards_html}"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 def render_user_journey() -> None:
@@ -764,10 +838,10 @@ def render_action_grid(base: pd.DataFrame) -> None:
         evidence_gap = max(evidence_gap, int(contains_any(base, DIRECT_EVIDENCE_COL, ["não", "nao"]).sum()))
 
     actions = [
-        ("Revisar curadoria alta", fmt_int(high_curation), "Prioridade alta para validação humana.", "d"),
-        ("Priorizar FPI/SIF", fmt_int(fpi_priority), "Eventos com potencial confirmado ou possível.", "d"),
-        ("Avaliar barreiras degradadas", fmt_int(degraded), "Controles críticos com estado frágil ou falha.", "c"),
-        ("Melhorar evidências", fmt_int(evidence_gap), "Registros com lacuna textual ou evidência insuficiente.", "b"),
+        ("Priorização de riscos", fmt_int(fpi_priority), "Eventos com potencial confirmado ou possível.", "d"),
+        ("Planos de ação", fmt_int(degraded), "Barreiras degradadas que pedem encaminhamento.", "d"),
+        ("Curadoria humana", fmt_int(high_curation), "Registros de prioridade alta para validação.", "d"),
+        ("Aprendizagem organizacional", fmt_int(evidence_gap), "Lacunas de evidência para melhorar regras e dados.", "d"),
     ]
     cols = st.columns(len(actions))
     for col, (title, value, body, accent) in zip(cols, actions):
@@ -1099,26 +1173,28 @@ def dashboard_executive(df: pd.DataFrame) -> None:
     risk_score, risk_level = cockpit_risk_score(total, fpi_yes, fpi_possible, high_curation, incidents, degraded_pct)
 
     st.subheader("Visão Executiva")
-    render_question_strip()
-
-    render_layer_heading(
-        "A",
-        "Monitoramento",
-        "Indicadores-chave para acompanhar a base, sinais críticos e alertas iniciais.",
-        "a",
-    )
-    metric_cards(
-        [
-            ("Eventos analisados", fmt_int(total), None),
-            ("Sinais fracos", fmt_int(weak), fmt_pct(weak / total) if total else None),
-            ("Precursores", fmt_int(precursors), fmt_pct(precursors / total) if total else None),
-            ("Incidentes realizados", fmt_int(incidents), fmt_pct(incidents / total) if total else None),
-            ("FPI/SIF Sim", fmt_int(fpi_yes), fmt_pct(fpi_yes / total) if total else None),
-            ("FPI/SIF Possível", fmt_int(fpi_possible), fmt_pct(fpi_possible / total) if total else None),
-            ("Curadoria alta", fmt_int(high_curation), fmt_pct(high_curation / total) if total else None),
-            ("Barreiras degradadas", fmt_pct(degraded_pct), None),
-        ]
-    )
+    overview_col, question_col = st.columns([3.7, 1.25], gap="large")
+    with overview_col:
+        render_layer_heading(
+            "A",
+            "Monitoramento",
+            "Indicadores-chave para acompanhar a base, sinais críticos e alertas iniciais.",
+            "a",
+        )
+        metric_cards(
+            [
+                ("Eventos analisados", fmt_int(total), None),
+                ("Sinais fracos", fmt_int(weak), fmt_pct(weak / total) if total else None),
+                ("Precursores", fmt_int(precursors), fmt_pct(precursors / total) if total else None),
+                ("Incidentes realizados", fmt_int(incidents), fmt_pct(incidents / total) if total else None),
+                ("FPI/SIF Sim", fmt_int(fpi_yes), fmt_pct(fpi_yes / total) if total else None),
+                ("FPI/SIF Possível", fmt_int(fpi_possible), fmt_pct(fpi_possible / total) if total else None),
+                ("Curadoria alta", fmt_int(high_curation), fmt_pct(high_curation / total) if total else None),
+                ("Barreiras degradadas", fmt_pct(degraded_pct), None),
+            ]
+        )
+    with question_col:
+        render_question_panel()
 
     render_layer_heading(
         "B",
